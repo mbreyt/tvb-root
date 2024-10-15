@@ -62,3 +62,6 @@ start = time.time()
 (t, buf), = run_dopa_backend(sim, conn_inhibitor, conn_dopamine, g_inhib, g_dopa, simulation_length=50000)
 stop = time.time()
 print(int(stop-start))
+
+# sim explodes plot only the beginning
+plt.plot(buf[0][:1000,0,:])
