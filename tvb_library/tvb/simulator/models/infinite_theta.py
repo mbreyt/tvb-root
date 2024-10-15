@@ -36,6 +36,7 @@ from tvb.basic.neotraits.api import NArray, List, Range, Final
 
 import numpy
 
+
 class MPRDopa(Model):
     r"""
     6D model describing the behavier of all-to-all coupled aQIF neurons (Theta-neurons)
@@ -59,7 +60,7 @@ class MPRDopa(Model):
 
     a = NArray(
         label=r":math:`a`",
-        default=numpy.array([0.0]),
+        default=numpy.array([0.04]),
         domain=Range(lo=0.01, hi=0.1, step=0.01),
         doc="""a""",
     )
@@ -113,8 +114,6 @@ class MPRDopa(Model):
         domain=Range(lo=-10.0, hi=10.0, step=0.01),
         doc="""External Current""",
     )
-
-
 
     Ea = NArray(
         label=r":math:`\Ea`",
@@ -181,7 +180,7 @@ class MPRDopa(Model):
     k = NArray(
         label=r":math:`k`",
         default=numpy.array([10e4]),
-        domain=Range(lo=100., hi=., step=1.),
+        domain=Range(lo=10e3, hi=10e5, step=1.),
         doc="""Dissociation constant""",
     )
 
@@ -194,7 +193,7 @@ class MPRDopa(Model):
 
     Km = NArray(
         label=r":math:`K_m`",
-        default=numpy.array([150.]),
+        default=numpy.array([50.]),
         domain=Range(lo=100., hi=300., step=1.),
         doc="""Dissociation constant""",
     )
@@ -220,9 +219,60 @@ class MPRDopa(Model):
         doc="""Characteristic time""",
     )
 
-    dopa_default_theta = DopaTheta(
-    wi=1.e-4, we=1.e-4, wd=1.e-4, sigma=1e-3,
+    # Informational attribute, used for phase-plane and initial()
+    state_variable_range = Final(
+        label="State Variable ranges [lo, hi]",
+        default={"r": numpy.array([0., 5.0]),
+                 "V": numpy.array([-100.0, 0.]),
+                 "u": numpy.array([-10., 10.0]),
+                 "Sa": numpy.array([-10., 10.0]),
+                 "Sg": numpy.array([-10., 10.0]),
+                 "Dp": numpy.array([-10., 10.0])},
+        doc="""Expected ranges of the state variables for initial condition generation and phase plane setup.""",
     )
+
+    state_variable_boundaries = Final(
+        label="State Variable boundaries [lo, hi]",
+        default={
+            "r": numpy.array([0.0, numpy.inf])
+        },
+    )
+
+    # TODO should match cvars below..
+    coupling_terms = Final(
+        label="Coupling terms",
+        # how to unpack coupling array
+        default=["Coupling_Term_r", "Coupling_Term_V", "Coupling_Term_u", "Coupling_Term_Sa", "Coupling_Term_Sg", "Coupling_Term_Dp"]
+    )
+    ('r', 'V', 'u', 'Sa', 'Sg', 'Dp')
+    state_variable_dfuns = Final(
+        label="Drift functions",
+        default={
+            "r": "2 * a * r * V * b * r - (Ad * Dp + Bd)* ga * Sa * r - gg * Sg * r + (a * Delta) / np.pi",
+            "V": "a * V**2 + b * V + c + eta - (np.pi**2 * r**2) / a + (Ad * Dp + Bd) * ga * Sa * (Ea - V) + gg * Sg * (Eg - V) + I - u,",
+            "u": "alpha * (beta * V - u) + ud * r",
+            "Sa": "-Sa / tauSa + Sja * c_exc",
+            "Sg": "-Sg / tauSg + Sjg * c_inh",
+            "Dp": "(k * c_dopa - Vmax * Dp / (Km + Dp)) / tau_Dp"
+        }
+    )
+
+    variables_of_interest = List(
+        of=str,
+        label="Variables or quantities available to Monitors",
+        choices=('r', 'V', 'u', 'Sa', 'Sg', 'Dp'),
+        default=("r", "V"),
+        doc="The quantities of interest for monitoring for the dopamine model.",
+    )
+
+    parameter_names = List(
+        of=str,
+        label="List of parameters for this model",
+        default='a b c ga gg eta Delta I Ea Eg Sja Sjg tauSa tauSg alpha beta ud k Vmax Km Bd Ad tauDp'.split())
+
+    # dopa_default_theta = DopaTheta(
+    # wi=1.e-4 we=1.e-4 wd=1.e-4, sigma=1e-3,
+    # )
 
 
     state_variables = ('r', 'V', 'u', 'Sa', 'Sg', 'Dp')
@@ -263,6 +313,8 @@ class MPRDopa(Model):
         Sg = self.Sg
         Delta = self.Delta
         eta = self.eta
+        alpha = self.alpha
+        beta = self.beta
         Ea = self.Ea
         Eg = self.Eg
         I = self.I
@@ -270,19 +322,24 @@ class MPRDopa(Model):
         tauSg = self.tauSg
         Sja = self.Sja
         Sjg = self.Sjg
+        ud = self.ud
+        k = self.k
+        Vmax = self.Vmax
+        Km = self.Km
+        tauDp = self.tauDp
 
 
         
-        c_exc, c_inh, c_dopa = coupling[1, :, :]  # This zero refers to the second element of cvar (V in this case)
+        c_inh, c_exc, c_dopa = coupling  # This zero refers to the second element of cvar (V in this case)
 
         derivative = numpy.empty_like(state_variables)
-
-        derivative[0] = 2. * a * r * V + b * r - (Ad * Dp + Bd)* ga * Sa * r - gg * Sg * r + (a * Delta) / np.pi,
-        derivative[1] = a * V**2 + b * V + c + eta - (np.pi**2 * r**2) / a + (Ad * Dp + Bd) * ga * Sa * (Ea - V) + gg * Sg * (Eg - V) + I - u,
+        r, V, u, Sa, Sg, Dp = state_variables
+        derivative[0] = 2. * a * r * V + b * r - (Ad * Dp + Bd)* ga * Sa * r - gg * Sg * r + (a * Delta) / numpy.pi,
+        derivative[1] = a * V**2 + b * V + c + eta - (numpy.pi**2 * r**2) / a + (Ad * Dp + Bd) * ga * Sa * (Ea - V) + gg * Sg * (Eg - V) + I - u,
         derivative[2] = alpha * (beta * V - u) + ud * r,
         derivative[3] = -Sa / tauSa + Sja * c_exc,
         derivative[4] = -Sg / tauSg + Sjg * c_inh,
-        derivative[5] = (k * c_dopa - Vmax * Dp / (Km + Dp)) / tau_Dp
+        derivative[5] = (k * c_dopa - Vmax * Dp / (Km + Dp)) / tauDp
 
         return derivative
 
