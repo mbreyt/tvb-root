@@ -99,7 +99,7 @@ class DOPABackend(object):
 def dopa_dfun(X, coupling, pars):
     c_inh, c_exc, c_dopa = coupling  # This zero refers to the second element of cvar (V in this case)
     a,b,c,ga,gg,eta,Delta,I,Ea,Eg,Sja,Sjg,tauSa,tauSg,alpha,beta,ud,k,Vmax,Km,Bd,Ad,tauDp = pars
-
+    # not change a, b, c, Sja, Sjg, tauSa, tauSg, Vmax
     r, V, u, Sa, Sg, Dp = X[0,:], X[1,:], X[2,:], X[3,:], X[4,:], X[5,:]
     derivative = np.stack((2. * a * r * V + b * r - (Ad * Dp + Bd)* ga * Sa * r - gg * Sg * r + (a * Delta) / np.pi,
     a * V**2 + b * V + c + eta - (np.pi**2 * r**2) / a + (Ad * Dp + Bd) * ga * Sa * (Ea - V) + gg * Sg * (Eg - V) + I - u,
@@ -110,7 +110,7 @@ def dopa_dfun(X, coupling, pars):
     return derivative
 
 
-# @jit
+@jit
 def run_sim_plain(dfun, pars, X0, dW, dt, conn_e, conn_i, conn_d, g_e, g_i, g_d, nstep=None, compatibility_mode=False, print_source=True):
     connectivities = np.stack((conn_i, conn_e, conn_d))
     X = X0[0,:,:,0]
@@ -122,19 +122,24 @@ def run_sim_plain(dfun, pars, X0, dW, dt, conn_e, conn_i, conn_d, g_e, g_i, g_d,
     count=0
     t = 0
     i = 0
-    for step in range(nstep):
+    for step in np.arange(nstep):
         dw = dW[:,:,step]
         coupling = cx(X, connectivities, g_i, g_e, g_d)
+        # coupling = np.clip(coupling, 0,1)
+        if np.any(np.isnan(coupling[1])):
+            break
         m_dx_tn = dfun(X, coupling, pars)
+        m_dx_tn = mpr_dopa_positive(m_dx_tn)
         inter = X + dt * m_dx_tn + dw
         dX = (m_dx_tn + dfun(inter, coupling, pars)) * dt / 2.0
         X = X + dX + dw
+        X = mpr_dopa_positive(X)
         t += dt
-        if  (count % 100)==0 and (i< (t_all.shape[0]-1)):
+        if  (count % 10)==0 and (i< (t_all.shape[0]-1)):
             i+=1
             t_all[i]=t
             y_all[i,:]= X
-    return (y_all, t_all)
+    return y_all
 
 
 @jit
@@ -144,3 +149,8 @@ def cx(state_vars, connectivities, g_i, g_e, g_d):
     aff_excitator = connectivities[1,...] @ r * g_e
     aff_dopamine = connectivities[2,...] @ r * g_d
     return np.stack((aff_inhibitor, aff_excitator, aff_dopamine))
+
+@jit
+def mpr_dopa_positive(X):
+    r, V, u, Sa, Sg, Dp = X[0,:], X[1,:], X[2,:], X[3,:], X[4,:], X[5,:]
+    return np.concatenate((r*(r>0), V, u, Sa*(Sa>0), Sg*(Sg>0), Dp*(Dp>0))).reshape(X.shape)

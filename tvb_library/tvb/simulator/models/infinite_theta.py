@@ -102,7 +102,7 @@ class MPRDopa(Model):
 
     eta = NArray(
         label=r":math:`\eta`",
-        default=numpy.array([18.0]),
+        default=numpy.array([10.0]),
         domain=Range(lo=-10.0, hi=20.0, step=0.01),
         doc="""Constant parameter to scale the rate of feedback from the
             firing rate variable to itself""",
@@ -145,15 +145,15 @@ class MPRDopa(Model):
 
     Sja = NArray(
         label=r":math:`S`",
-        default=numpy.array([.8]),
-        domain=Range(lo=.1, hi=2., step=.1),
+        default=numpy.array([.0008]),
+        domain=Range(lo=.0001, hi=2., step=.0001),
         doc="""Sja""",
     )
 
     Sjg = NArray(
         label=r":math:`S`",
-        default=numpy.array([1.2]),
-        domain=Range(lo=.1, hi=2., step=.1),
+        default=numpy.array([0.0012]),
+        domain=Range(lo=.0001, hi=2., step=.0001),
         doc="""Sjg""",
     )
     ud = NArray(
@@ -179,8 +179,8 @@ class MPRDopa(Model):
 
     k = NArray(
         label=r":math:`k`",
-        default=numpy.array([10e4]),
-        domain=Range(lo=10e3, hi=10e5, step=1.),
+        default=numpy.array([.1]),
+        domain=Range(lo=10, hi=10e5, step=1.),
         doc="""Dissociation constant""",
     )
 
@@ -193,7 +193,7 @@ class MPRDopa(Model):
 
     Km = NArray(
         label=r":math:`K_m`",
-        default=numpy.array([50.]),
+        default=numpy.array([150.]),
         domain=Range(lo=100., hi=300., step=1.),
         doc="""Dissociation constant""",
     )
