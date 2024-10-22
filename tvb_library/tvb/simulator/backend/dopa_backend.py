@@ -149,7 +149,7 @@ def run_sim_plain(dfun, pars, X0, dW, dt, conn_e, conn_i, conn_d, g_e, g_i, g_d,
 def cx(state_vars, connectivities, g_i, g_e, g_d):
     r = state_vars[0,:]
     aff_inhibitor = connectivities[0,...].T @ r * g_i
-    aff_excitator = connectivities[1,...] @ r * g_e
+    aff_excitator = connectivities[1,...].T @ r * g_e
     aff_dopamine = connectivities[2,...].T @ r * g_d
     return np.stack((aff_inhibitor, aff_excitator, aff_dopamine))
 
