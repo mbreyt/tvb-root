@@ -78,7 +78,7 @@ class DOPABackend(object):
             dt = sim.integrator.dt
             noise *= noise_gfun * np.sqrt(dt)
             pars = tuple(self._get_par(sim.model, attr_name)[0] for attr_name in sim.model.parameter_names)
-            svar_bufs = run_sim_plain(dopa_dfun, pars, sim.initial_conditions, noise, dt, sim.connectivity.weights, conn_i, conn_d, sim.coupling.a, g_i, g_d, nstep, compatibility_mode=compatibility_mode, print_source=print_source)
+            svar_bufs, c = run_sim_plain(dopa_dfun, pars, sim.initial_conditions, noise, dt, sim.connectivity.weights, conn_i, conn_d, sim.coupling.a, g_i, g_d, nstep, compatibility_mode=compatibility_mode, print_source=print_source)
             time = np.arange(svar_bufs[0].shape[1]) * sim.integrator.dt
         # elif isinstance(sim.monitors[0], monitors.TemporalAverage):
         #     svar_bufs = self._run_sim_tavg_chunked(sim, nstep, chunksize=chunksize, compatibility_mode=compatibility_mode, print_source=print_source)
@@ -86,7 +86,7 @@ class DOPABackend(object):
         #     time = np.arange(svar_bufs[0].shape[1]) * T + 0.5 * T
         else:
             raise NotImplementedError("Only Raw or TemporalAverage monitors supported.")
-        return (time, svar_bufs),   
+        return (time, svar_bufs), c
 
     def _get_par(self, obj, foostring):
         return getattr(obj, foostring)
@@ -104,7 +104,7 @@ def dopa_dfun(X, coupling, pars):
     derivative = np.stack((2. * a * r * V + b * r - (Ad * Dp + Bd)* ga * Sa * r - gg * Sg * r + (a * Delta) / np.pi,
     a * V**2 + b * V + c + eta - (np.pi**2 * r**2) / a + (Ad * Dp + Bd) * ga * Sa * (Ea - V) + gg * Sg * (Eg - V) + I - u,
     alpha * (beta * V - u) + ud * r,
-    -Sa / tauSa + Sja * c_exc,
+    -Sa / tauSa + Sja * (r + c_exc),
     -Sg / tauSg + Sjg * c_inh,
     (k * c_dopa - Vmax * Dp / (Km + Dp)) / tauDp))
     return derivative
@@ -114,19 +114,22 @@ def dopa_dfun(X, coupling, pars):
 def run_sim_plain(dfun, pars, X0, dW, dt, conn_e, conn_i, conn_d, g_e, g_i, g_d, nstep=None, compatibility_mode=False, print_source=True):
     connectivities = np.stack((conn_i, conn_e, conn_d))
     X = X0[0,:,:,0]
-    y_all = np.empty((nstep//100,)+X.shape)
-    t_all = np.empty((nstep//100, ))
+    y_all = np.empty((nstep//10,)+X.shape)
+    t_all = np.empty((nstep//10, ))
 
     t_all[0] = 0
     y_all[0, :] = X
     count=0
     t = 0
     i = 0
+    couplings = []
     for step in np.arange(nstep):
         dw = dW[:,:,step]
         coupling = cx(X, connectivities, g_i, g_e, g_d)
-        # coupling = np.clip(coupling, 0,1)
+        couplings.append(coupling)
         if np.any(np.isnan(coupling[1])):
+            print("warning, coupling is nan, stopping sim")
+            print(step)
             break
         m_dx_tn = dfun(X, coupling, pars)
         m_dx_tn = mpr_dopa_positive(m_dx_tn)
@@ -139,15 +142,15 @@ def run_sim_plain(dfun, pars, X0, dW, dt, conn_e, conn_i, conn_d, g_e, g_i, g_d,
             i+=1
             t_all[i]=t
             y_all[i,:]= X
-    return y_all
+    return y_all, couplings
 
 
 @jit
 def cx(state_vars, connectivities, g_i, g_e, g_d):
     r = state_vars[0,:]
-    aff_inhibitor = connectivities[0,...] @ r * g_i
+    aff_inhibitor = connectivities[0,...].T @ r * g_i
     aff_excitator = connectivities[1,...] @ r * g_e
-    aff_dopamine = connectivities[2,...] @ r * g_d
+    aff_dopamine = connectivities[2,...].T @ r * g_d
     return np.stack((aff_inhibitor, aff_excitator, aff_dopamine))
 
 @jit
